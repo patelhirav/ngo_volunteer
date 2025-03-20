@@ -9,6 +9,8 @@ import * as bcrypt from 'bcrypt';
 import { Otp } from './entities/otp.entity';
 import { Volunteer } from '../volunteer/volunteer.entity';
 import { NGO } from '../ngo/ngo.entity';
+import { JwtService } from '@nestjs/jwt';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class OtpService {
@@ -17,9 +19,9 @@ export class OtpService {
     @InjectRepository(Volunteer)
     private readonly volunteerRepository: Repository<Volunteer>,
     @InjectRepository(NGO) private readonly ngoRepository: Repository<NGO>,
+    private readonly jwtService: JwtService,
   ) {}
 
-  // 📌 Generate OTP and save to DB
   async generateOtp(email: string): Promise<string> {
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     let userType = '';
@@ -41,11 +43,36 @@ export class OtpService {
       throw new NotFoundException('User not found');
     }
 
-    // Store OTP in DB
     await this.otpRepository.save({ email, otp: otpCode });
+
+    await this.sendOtpEmail(email, otpCode);
 
     console.log(`✅ OTP for ${email}: ${otpCode} (Type: ${userType})`);
     return otpCode;
+  }
+
+  private async sendOtpEmail(email: string, otp: string) {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'patelhirav2212@gmail.com',
+        pass: 'oqzb aajk mamu yhyf',
+      },
+    });
+
+    const mailOptions = {
+      from: 'patelhirav2212@gmail.com',
+      to: email,
+      subject: 'Your OTP Code for Login',
+      text: `Your OTP Code is: ${otp}. It is valid for 10 minutes.`,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`📧 OTP sent to ${email}`);
+    } catch (error) {
+      console.error('Error sending OTP email:', error);
+    }
   }
 
   // 📌 Verify OTP
@@ -119,7 +146,7 @@ export class OtpService {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
 
-    await this.otpRepository.delete({ email }); 
+    await this.otpRepository.delete({ email });
 
     return user instanceof Volunteer
       ? this.volunteerRepository.save(user)
