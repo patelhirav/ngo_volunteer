@@ -8,7 +8,7 @@ export class NGO {
   id: ObjectId;
 
   @Column({ type: 'varchar', length: 255 })
-  organizationName: string;
+  nameOfOrganization: string;
 
   @Column({ type: 'varchar', unique: true })
   email: string;
