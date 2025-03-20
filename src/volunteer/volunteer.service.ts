@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Volunteer } from './volunteer.entity';
@@ -9,6 +13,7 @@ import { ObjectId } from 'mongodb';
 
 @Injectable()
 export class VolunteerService {
+  ngoRepository: any;
   constructor(
     @InjectRepository(Volunteer)
     private readonly volunteerRepository: Repository<Volunteer>,
@@ -20,12 +25,12 @@ export class VolunteerService {
     const password = data.password.trim();
 
     // Check if the volunteer already exists
-    const existingVolunteer = await this.volunteerRepository.findOne({
-      where: { email },
-    });
+    const existingUser =
+      (await this.volunteerRepository.findOne({ where: { email } })) ||
+      (await this.ngoRepository.findOne({ where: { email } }));
 
-    if (existingVolunteer) {
-      throw new Error('Volunteer with this email already exists');
+    if (existingUser) {
+      throw new BadRequestException('User with this email already exists');
     }
 
     // Hash the password
