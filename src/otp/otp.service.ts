@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,7 +23,7 @@ export class OtpService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async generateOtp(email: string): Promise<string> {
+  async generateOtp(email: string) {
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     let userType = '';
 
@@ -40,15 +41,23 @@ export class OtpService {
     }
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'User not found',
+      });
     }
 
     await this.otpRepository.save({ email, otp: otpCode });
 
     await this.sendOtpEmail(email, otpCode);
 
-    console.log(`✅ OTP for ${email}: ${otpCode} (Type: ${userType})`);
-    return otpCode;
+    console.log(`OTP for ${email}: ${otpCode} (Type: ${userType})`);
+    return {
+      statusCode: 200,
+      message: 'OTP sent successfully',
+      email,
+      userType,
+    };
   }
 
   private async sendOtpEmail(email: string, otp: string) {
@@ -63,93 +72,72 @@ export class OtpService {
     const mailOptions = {
       from: 'patelhirav2212@gmail.com',
       to: email,
-      subject: 'Your OTP Code for Login',
+      subject: 'Your OTP Code for Password Reset',
       text: `Your OTP Code is: ${otp}. It is valid for 10 minutes.`,
     };
 
     try {
       await transporter.sendMail(mailOptions);
-      console.log(`📧 OTP sent to ${email}`);
+      console.log(`OTP sent to ${email}`);
     } catch (error) {
       console.error('Error sending OTP email:', error);
+      throw new InternalServerErrorException({
+        statusCode: 500,
+        message: 'Failed to send OTP email',
+      });
     }
   }
-
-  // 📌 Verify OTP
-  // async verifyOtp(
-  //   email: string,
-  //   otp: string,
-  //   newPassword: string,
-  // ): Promise<{ message: string }> {
-  //   const otpEntry = await this.otpRepository.findOne({
-  //     where: { email, otp: otp },
-  //   });
-
-  //   if (!otpEntry) {
-  //     throw new BadRequestException('Invalid OTP');
-  //   }
-
-  //   await this.resetPassword(email, newPassword);
-
-  //   // Delete OTP after successful verification
-  //   await this.otpRepository.delete({ email });
-
-  //   return { message: 'OTP verified successfully, password reset' };
-  // }
 
   async verifyOtp(email: string, otp: string) {
     const otpEntry = await this.otpRepository.findOne({
-      where: { email, otp: otp },
+      where: { email, otp },
     });
 
     if (!otpEntry) {
-      throw new BadRequestException('Invalid OTP or OTP expired');
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Invalid or expired OTP',
+      });
     }
 
-    return { message: 'OTP verified successfully' };
+    await this.otpRepository.delete({ email });
+
+    return {
+      statusCode: 200,
+      message: 'OTP verified successfully',
+    };
   }
 
-  // async resetPassword(email: string, newPassword: string) {
-  //   if (!newPassword) {
-  //     throw new BadRequestException('New password is required');
-  //   }
-
-  //   let user = await this.volunteerRepository.findOne({ where: { email } });
-  //   if (!user) {
-  //     const user = await this.ngoRepository.findOne({ where: { email } });
-  //     console.log(user);
-  //   }
-
-  //   if (!user) {
-  //     throw new NotFoundException('User not found');
-  //   }
-
-  //   const hashedPassword = await bcrypt.hash(newPassword, 10);
-  //   user.password = hashedPassword;
-
-  //   return user instanceof Volunteer
-  //     ? this.volunteerRepository.save(user)
-  //     : this.ngoRepository.save(user);
-  // }
-
   async resetPassword(email: string, newPassword: string) {
-    let user = await this.volunteerRepository.findOne({ where: { email } });
+    let user: Volunteer | NGO | null = await this.volunteerRepository.findOne({
+      where: { email },
+    });
+
     if (!user) {
-      const user = await this.ngoRepository.findOne({ where: { email } });
-      console.log(user);
+      user = await this.ngoRepository.findOne({ where: { email } });
     }
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'User not found',
+      });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
 
+    if (user instanceof Volunteer) {
+      await this.volunteerRepository.save(user);
+    } else {
+      await this.ngoRepository.save(user);
+    }
+
     await this.otpRepository.delete({ email });
 
-    return user instanceof Volunteer
-      ? this.volunteerRepository.save(user)
-      : this.ngoRepository.save(user);
+    return {
+      statusCode: 200,
+      message: 'Password reset successfully',
+    };
   }
 }
